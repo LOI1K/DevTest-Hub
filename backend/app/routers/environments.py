@@ -1,7 +1,11 @@
-from itertools import count
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.models import Environment
 from app.schemas import (
     EnvironmentCreate,
     EnvironmentResponse,
@@ -14,13 +18,13 @@ router = APIRouter(
     tags=["Environments"],
 )
 
-environments: dict[int, EnvironmentResponse] = {}
-environment_ids = count(1)
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("", response_model=list[EnvironmentResponse])
-def get_environments():
-    return list(environments.values())
+def get_environments(db: DbSession):
+    statement = select(Environment).order_by(Environment.id)
+    return db.scalars(statement).all()
 
 
 @router.post(
@@ -28,14 +32,15 @@ def get_environments():
     response_model=EnvironmentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_environment(data: EnvironmentCreate):
-    environment = EnvironmentResponse(
-        id=next(environment_ids),
+def create_environment(data: EnvironmentCreate, db: DbSession):
+    environment = Environment(
         name=data.name,
-        template=data.template,
-        status=EnvironmentStatus.pending,
+        template=data.template.value,
+        status=EnvironmentStatus.pending.value,
     )
 
-    environments[environment.id] = environment
+    db.add(environment)
+    db.commit()
+    db.refresh(environment)
 
     return environment
