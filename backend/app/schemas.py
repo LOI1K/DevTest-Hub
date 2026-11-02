@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class EnvironmentTemplate(str, Enum):
     nginx = "nginx"
@@ -28,6 +30,8 @@ class EnvironmentStatus(str, Enum):
 class EnvironmentResponse(EnvironmentCreate):
     id: int
     status: EnvironmentStatus
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HealthResponse(BaseModel):
