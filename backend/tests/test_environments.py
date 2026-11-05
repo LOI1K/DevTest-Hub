@@ -121,3 +121,94 @@ def test_invalid_template(client):
     )
 
     assert response.status_code == 422
+
+
+def test_get_environment_by_id(client):
+    create_response = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "auth-testing",
+            "template": "nginx",
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    environment_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == environment_id
+    assert response.json()["name"] == "auth-testing"
+
+
+def test_get_nonexistent_environment(client):
+    response = client.get("/api/v1/environments/999999")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Environment not found"
+    }
+
+def test_update_environment(client):
+    created = client.post(
+        "/api/v1/environments",
+        json={"name": "old-name", "template": "nginx"},
+    )
+
+    environment_id = created.json()["id"]
+
+    response = client.patch(
+        f"/api/v1/environments/{environment_id}",
+        json={"name": "new-name"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "new-name"
+
+    saved = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert saved.json()["name"] == "new-name"
+
+
+def test_update_nonexistent_environment(client):
+    response = client.patch(
+        "/api/v1/environments/999999",
+        json={"name": "new-name"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_environment(client):
+    created = client.post(
+        "/api/v1/environments",
+        json={"name": "delete-test", "template": "nginx"},
+    )
+
+    environment_id = created.json()["id"]
+
+    response = client.delete(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert response.status_code == 204
+
+    check = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert check.status_code == 404
+
+
+def test_delete_nonexistent_environment(client):
+    response = client.delete(
+        "/api/v1/environments/999999"
+    )
+
+    assert response.status_code == 404

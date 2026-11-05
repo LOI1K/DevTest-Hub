@@ -20,6 +20,14 @@ class EnvironmentCreate(BaseModel):
     template: EnvironmentTemplate
 
 
+class EnvironmentUpdate(BaseModel):
+    name: str = Field(
+        min_length=3,
+        max_length=40,
+        pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    )
+
+
 class EnvironmentStatus(str, Enum):
     pending = "pending"
     running = "running"
