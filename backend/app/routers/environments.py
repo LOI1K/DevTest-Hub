@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Environment
+from app.dependencies import get_current_user
+from app.models import Environment, User
 from app.schemas import (
     EnvironmentCreate,
     EnvironmentResponse,
@@ -20,11 +21,38 @@ router = APIRouter(
 )
 
 DbSession = Annotated[Session, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def find_owned_environment(
+    environment_id: int,
+    user_id: int,
+    db: Session,
+) -> Environment:
+    statement = select(Environment).where(
+        Environment.id == environment_id,
+        Environment.owner_id == user_id,
+    )
+
+    environment = db.scalar(statement)
+
+    if environment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Environment not found",
+        )
+
+    return environment
 
 
 @router.get("", response_model=list[EnvironmentResponse])
-def get_environments(db: DbSession):
-    statement = select(Environment).order_by(Environment.id)
+def get_environments(db: DbSession, current_user: CurrentUser):
+    statement = (
+        select(Environment)
+        .where(Environment.owner_id == current_user.id)
+        .order_by(Environment.id)
+    )
+
     return db.scalars(statement).all()
 
 
@@ -33,11 +61,16 @@ def get_environments(db: DbSession):
     response_model=EnvironmentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_environment(data: EnvironmentCreate, db: DbSession):
+def create_environment(
+    data: EnvironmentCreate,
+    db: DbSession,
+    current_user: CurrentUser,
+):
     environment = Environment(
         name=data.name,
         template=data.template.value,
         status=EnvironmentStatus.pending.value,
+        owner_id=current_user.id,
     )
 
     db.add(environment)
@@ -51,16 +84,16 @@ def create_environment(data: EnvironmentCreate, db: DbSession):
     "/{environment_id}",
     response_model=EnvironmentResponse,
 )
-def get_environment(environment_id: int, db: DbSession):
-    environment = db.get(Environment, environment_id)
-
-    if environment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Environment not found",
-        )
-
-    return environment
+def get_environment(
+    environment_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
+):
+    return find_owned_environment(
+        environment_id,
+        current_user.id,
+        db,
+    )
 
 
 @router.patch(
@@ -71,14 +104,13 @@ def update_environment(
     environment_id: int,
     data: EnvironmentUpdate,
     db: DbSession,
+    current_user: CurrentUser,
 ):
-    environment = db.get(Environment, environment_id)
-
-    if environment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Environment not found",
-        )
+    environment = find_owned_environment(
+        environment_id,
+        current_user.id,
+        db,
+    )
 
     environment.name = data.name
 
@@ -95,14 +127,13 @@ def update_environment(
 def delete_environment(
     environment_id: int,
     db: DbSession,
+    current_user: CurrentUser,
 ):
-    environment = db.get(Environment, environment_id)
-
-    if environment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Environment not found",
-        )
+    environment = find_owned_environment(
+        environment_id,
+        current_user.id,
+        db,
+    )
 
     db.delete(environment)
     db.commit()
