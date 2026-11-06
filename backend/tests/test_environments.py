@@ -1,62 +1,35 @@
 import pytest
 
-from fastapi.testclient import TestClient
-from sqlalchemy import URL, create_engine, text
-from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.database import get_db
-from app.main import app
+@pytest.fixture(autouse=True)
+def authenticate_environment_tests(client):
+    password = "Example-Password-2026!"
 
+    registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "firstdeveloper",
+            "email": "firstdeveloper@example.com",
+            "password": password,
+        },
+    )
+    assert registration.status_code == 201
 
-# Подключение только к тестовой базе
-test_database_url = URL.create(
-    drivername="postgresql+psycopg",
-    username=settings.postgres_user,
-    password=settings.postgres_password,
-    host="127.0.0.1",
-    port=5434,
-    database="devtesthub_test",
-)
+    login = client.post(
+        "/api/v1/auth/login",
+        data={
+            "username": "firstdeveloper",
+            "password": password,
+        },
+    )
+    assert login.status_code == 200
 
-test_engine = create_engine(
-    test_database_url,
-    pool_pre_ping=True,
-)
+    token = login.json()["access_token"]
+    client.headers["Authorization"] = f"Bearer {token}"
 
+    yield
 
-@pytest.fixture
-def client():
-    # Защита от случайного подключения к основной базе
-    if test_database_url.database != "devtesthub_test":
-        raise RuntimeError("Tests must use devtesthub_test")
-
-    with test_engine.connect() as connection:
-        transaction = connection.begin()
-
-        def override_get_db():
-            with Session(
-                bind=connection,
-                join_transaction_mode="create_savepoint",
-            ) as session:
-                yield session
-
-        try:
-            actual_database = connection.scalar(
-                text("SELECT current_database()")
-            )
-
-            if actual_database != "devtesthub_test":
-                raise RuntimeError("Wrong test database")
-
-            app.dependency_overrides[get_db] = override_get_db
-
-            with TestClient(app) as test_client:
-                yield test_client
-
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            transaction.rollback()
+    client.headers.pop("Authorization", None)
 
 
 def test_health(client):
@@ -124,7 +97,7 @@ def test_invalid_template(client):
 
 
 def test_get_environment_by_id(client):
-    create_response = client.post(
+    created = client.post(
         "/api/v1/environments",
         json={
             "name": "auth-testing",
@@ -132,9 +105,9 @@ def test_get_environment_by_id(client):
         },
     )
 
-    assert create_response.status_code == 201
+    assert created.status_code == 201
 
-    environment_id = create_response.json()["id"]
+    environment_id = created.json()["id"]
 
     response = client.get(
         f"/api/v1/environments/{environment_id}"
@@ -153,11 +126,17 @@ def test_get_nonexistent_environment(client):
         "detail": "Environment not found"
     }
 
+
 def test_update_environment(client):
     created = client.post(
         "/api/v1/environments",
-        json={"name": "old-name", "template": "nginx"},
+        json={
+            "name": "old-name",
+            "template": "nginx",
+        },
     )
+
+    assert created.status_code == 201
 
     environment_id = created.json()["id"]
 
@@ -173,6 +152,7 @@ def test_update_environment(client):
         f"/api/v1/environments/{environment_id}"
     )
 
+    assert saved.status_code == 200
     assert saved.json()["name"] == "new-name"
 
 
@@ -188,8 +168,13 @@ def test_update_nonexistent_environment(client):
 def test_delete_environment(client):
     created = client.post(
         "/api/v1/environments",
-        json={"name": "delete-test", "template": "nginx"},
+        json={
+            "name": "delete-test",
+            "template": "nginx",
+        },
     )
+
+    assert created.status_code == 201
 
     environment_id = created.json()["id"]
 
@@ -212,3 +197,94 @@ def test_delete_nonexistent_environment(client):
     )
 
     assert response.status_code == 404
+
+
+def test_environment_requires_authentication(client):
+    token = client.headers.pop("Authorization")
+
+    try:
+        response = client.get("/api/v1/environments")
+    finally:
+        client.headers["Authorization"] = token
+
+    assert response.status_code == 401
+
+
+def test_cannot_access_another_users_environment(client):
+    # Первый разработчик создаёт собственную среду
+    created = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "private-environment",
+            "template": "nginx",
+        },
+    )
+
+    assert created.status_code == 201
+    environment_id = created.json()["id"]
+
+    # Регистрируем второго разработчика
+    password = "Example-Password-2026!"
+
+    registration = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "seconddeveloper",
+            "email": "seconddeveloper@example.com",
+            "password": password,
+        },
+    )
+    assert registration.status_code == 201
+
+    # Получаем JWT второго разработчика
+    login = client.post(
+        "/api/v1/auth/login",
+        data={
+            "username": "seconddeveloper",
+            "password": password,
+        },
+    )
+
+    assert login.status_code == 200
+
+    second_token = login.json()["access_token"]
+    second_headers = {
+        "Authorization": f"Bearer {second_token}"
+    }
+
+    # Второй разработчик не видит чужие среды
+    response = client.get(
+        "/api/v1/environments",
+        headers=second_headers,
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+    # Не может получить чужую среду по ID
+    response = client.get(
+        f"/api/v1/environments/{environment_id}",
+        headers=second_headers,
+    )
+    assert response.status_code == 404
+
+    # Не может изменить чужую среду
+    response = client.patch(
+        f"/api/v1/environments/{environment_id}",
+        json={"name": "changed-name"},
+        headers=second_headers,
+    )
+    assert response.status_code == 404
+
+    # Не может удалить чужую среду
+    response = client.delete(
+        f"/api/v1/environments/{environment_id}",
+        headers=second_headers,
+    )
+    assert response.status_code == 404
+
+    # Первый разработчик по-прежнему видит свою среду
+    response = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "private-environment"
