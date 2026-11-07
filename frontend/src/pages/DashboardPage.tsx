@@ -19,8 +19,13 @@ function DashboardPage() {
     if (!token) return;
 
     const controller = new AbortController();
+    let isLoading = false;
 
     async function loadEnvironments() {
+      if (isLoading || controller.signal.aborted) return;
+
+      isLoading = true;
+
       try {
         const response = await fetch("/api/v1/environments", {
           headers: {
@@ -41,6 +46,7 @@ function DashboardPage() {
 
         if (!controller.signal.aborted) {
           setEnvironments(data);
+          setError("");
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -51,6 +57,8 @@ function DashboardPage() {
           );
         }
       } finally {
+        isLoading = false;
+
         if (!controller.signal.aborted) {
           setLoading(false);
         }
@@ -59,7 +67,31 @@ function DashboardPage() {
 
     void loadEnvironments();
 
-    return () => controller.abort();
+    const intervalId = window.setInterval(() => {
+      void loadEnvironments();
+    }, 5000);
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") {
+        void loadEnvironments();
+      }
+    }
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+
+      document.removeEventListener(
+        "visibilitychange",
+        refreshWhenVisible,
+      );
+
+      window.removeEventListener("focus", refreshWhenVisible);
+
+      controller.abort();
+    };
   }, [token]);
 
   function handleCreated(environment: Environment) {
