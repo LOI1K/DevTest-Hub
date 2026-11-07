@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -39,6 +39,16 @@ class Environment(Base):
         String(20),
         nullable=False,
         server_default="pending"
+    )
+
+    container_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    host_port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

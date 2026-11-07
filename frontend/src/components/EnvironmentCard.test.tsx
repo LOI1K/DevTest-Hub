@@ -70,16 +70,23 @@ describe("EnvironmentCard", () => {
     );
   });
 
-  it("удаляет тестовую среду после подтверждения", async () => {
+
+  it("помечает среду для удаления после подтверждения", async () => {
     const user = userEvent.setup();
     const onUpdated = vi.fn();
     const onDeleted = vi.fn();
 
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
+    const deletingEnvironment = {
+      ...environment,
+      status: "deleting",
+    };
+
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      status: 204,
+      status: 202,
+      json: async () => deletingEnvironment,
     });
 
     vi.stubGlobal("fetch", fetchMock);
@@ -93,11 +100,15 @@ describe("EnvironmentCard", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Удалить" }));
+    await user.click(
+      screen.getByRole("button", { name: "Удалить" }),
+    );
 
     await waitFor(() => {
-      expect(onDeleted).toHaveBeenCalledWith(4);
+      expect(onUpdated).toHaveBeenCalledWith(deletingEnvironment);
     });
+
+    expect(onDeleted).not.toHaveBeenCalled();
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/environments/4",

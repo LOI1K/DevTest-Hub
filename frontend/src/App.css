@@ -291,3 +291,17 @@ h1 {
 .environment-edit-form input:focus-visible {
   outline: 2px solid #38bdf8;
 }
+
+.environment-open-button {
+  display: inline-block;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: #0284c7;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.environment-open-button:hover {
+  background-color: #0369a1;
+}

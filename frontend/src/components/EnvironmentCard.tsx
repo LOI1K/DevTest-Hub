@@ -8,7 +8,7 @@ type Props = {
   onDeleted: (id: number) => void;
 };
 
-function EnvironmentCard({ environment, token, onUpdated, onDeleted }: Props) {
+function EnvironmentCard({ environment, token, onUpdated }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(environment.name);
   const [error, setError] = useState("");
@@ -50,6 +50,8 @@ function EnvironmentCard({ environment, token, onUpdated, onDeleted }: Props) {
   }
 
   async function handleDelete() {
+    if (environment.status === "deleting") return;
+
     const confirmed = window.confirm(`Удалить среду «${environment.name}»?`);
 
     if (!confirmed) return;
@@ -65,11 +67,14 @@ function EnvironmentCard({ environment, token, onUpdated, onDeleted }: Props) {
         },
       });
 
-      if (response.status !== 204) {
+      if (response.status !== 202) {
         throw new Error(`Ошибка удаления: HTTP ${response.status}`);
       }
 
-      onDeleted(environment.id);
+      const updated: Environment = await response.json();
+
+      onUpdated(updated);
+      setIsEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Неизвестная ошибка.");
     } finally {
@@ -85,7 +90,26 @@ function EnvironmentCard({ environment, token, onUpdated, onDeleted }: Props) {
       <p>Статус: {environment.status}</p>
       <p>ID: {environment.id}</p>
 
-      {isEditing ? (
+      {environment.status === "running" && environment.host_port != null && (
+        <div>
+          <p>Адрес: http://127.0.0.1:{environment.host_port}</p>
+
+          <a
+            className="environment-open-button"
+            href={`http://127.0.0.1:${environment.host_port}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Открыть среду
+          </a>
+        </div>
+      )}
+
+      {environment.status === "deleting" ? (
+      <p role="status">
+        Удаление запрошено. Ожидается обработка Docker Worker.
+      </p>
+    ) : isEditing ? (
         <form className="environment-edit-form" onSubmit={handleUpdate}>
           <label htmlFor={`edit-${environment.id}`}>Новое название</label>
 

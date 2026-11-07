@@ -182,13 +182,23 @@ def test_delete_environment(client):
         f"/api/v1/environments/{environment_id}"
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 202
+    assert response.json()["id"] == environment_id
+    assert response.json()["status"] == "deleting"
 
     check = client.get(
         f"/api/v1/environments/{environment_id}"
     )
 
-    assert check.status_code == 404
+    assert check.status_code == 200
+    assert check.json()["status"] == "deleting"
+
+    repeated = client.delete(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert repeated.status_code == 202
+    assert repeated.json()["status"] == "deleting"
 
 
 def test_delete_nonexistent_environment(client):
