@@ -124,6 +124,12 @@ def update_environment(
     "/{environment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
+
+@router.delete(
+    "/{environment_id}",
+    response_model=EnvironmentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def delete_environment(
     environment_id: int,
     db: DbSession,
@@ -135,5 +141,15 @@ def delete_environment(
         db,
     )
 
-    db.delete(environment)
-    db.commit()
+    if environment.status == EnvironmentStatus.deploying.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Environment deployment is in progress",
+        )
+
+    if environment.status != EnvironmentStatus.deleting.value:
+        environment.status = EnvironmentStatus.deleting.value
+        db.commit()
+        db.refresh(environment)
+
+    return environment

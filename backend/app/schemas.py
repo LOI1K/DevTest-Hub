@@ -1,8 +1,6 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -30,14 +28,17 @@ class EnvironmentUpdate(BaseModel):
 
 class EnvironmentStatus(str, Enum):
     pending = "pending"
+    deploying = "deploying"
     running = "running"
     stopped = "stopped"
     failed = "failed"
+    deleting = "deleting"
 
 
 class EnvironmentResponse(EnvironmentCreate):
     id: int
     status: EnvironmentStatus
+    host_port: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
