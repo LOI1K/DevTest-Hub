@@ -3,7 +3,7 @@ import time
 
 from sqlalchemy import text
 
-from app.database import engine
+from worker.database import engine
 from worker.delete_once import delete_environment
 from worker.run_once import main as run_deployment
 
@@ -58,9 +58,6 @@ def process_jobs():
             run_deployment()
         except Exception as error:
             print(f"Ошибка развёртывания: {error}")
-
-    if not deleting_ids and not has_pending:
-        print("Ожидающих заданий нет.")
 
 
 def main():

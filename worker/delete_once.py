@@ -5,7 +5,7 @@ import docker
 from docker.errors import NotFound
 from sqlalchemy import text
 
-from app.database import engine
+from worker.database import engine
 
 
 def delete_environment(environment_id: int, apply: bool) -> None:

@@ -1,7 +1,7 @@
 import docker
 from sqlalchemy import text
 
-from app.database import engine
+from worker.database import engine
 
 
 def claim_job():
