@@ -2,7 +2,7 @@ import docker
 from docker.errors import NotFound
 from sqlalchemy import text
 
-from app.database import engine
+from worker.database import engine
 
 
 def main():
