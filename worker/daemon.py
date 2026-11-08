@@ -1,11 +1,15 @@
 import argparse
 import time
 
+import signal
+from threading import Event
+
 from sqlalchemy import text
 
 from worker.database import engine
 from worker.delete_once import delete_environment
 from worker.run_once import main as run_deployment
+from worker.recover_once import recover_jobs
 
 
 def get_jobs():
@@ -60,6 +64,7 @@ def process_jobs():
             print(f"Ошибка развёртывания: {error}")
 
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
@@ -70,25 +75,69 @@ def main():
     if args.interval < 1:
         parser.error("Интервал должен быть не менее 1 секунды")
 
-    if args.once:
-        process_jobs()
-        return
+    lock_id = 11335577
+    stop_requested = Event()
 
-    print("Docker Worker запущен.")
-    print(f"Интервал проверки: {args.interval} сек.")
+    def handle_sigterm(_signum, _frame):
+        stop_requested.set()
+
+    previous_handler = signal.signal(
+        signal.SIGTERM,
+        handle_sigterm,
+    )
 
     try:
-        while True:
+        with engine.connect() as connection:
+            acquired = connection.execute(
+                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                {"lock_id": lock_id},
+            ).scalar_one()
+
+            connection.commit()
+
+            if not acquired:
+                print("Другой Docker Worker уже работает.")
+                return
+
             try:
-                process_jobs()
-            except Exception as error:
-                print(f"Ошибка цикла Worker: {error}")
+                print("Docker Worker запущен.")
+                print("Эксклюзивная блокировка получена.")
 
-            time.sleep(args.interval)
+                print("Проверка незавершённых развёртываний...")
+                recover_jobs(apply=True)
 
-    except KeyboardInterrupt:
-        print("\nDocker Worker остановлен.")
+                if args.once:
+                    if not stop_requested.is_set():
+                        process_jobs()
+                    return
 
+                print(f"Интервал проверки: {args.interval} сек.")
+
+                while not stop_requested.is_set():
+                    try:
+                        process_jobs()
+                    except Exception as error:
+                        print(f"Ошибка цикла Worker: {error}")
+
+                    stop_requested.wait(args.interval)
+
+            except KeyboardInterrupt:
+                print("\nDocker Worker остановлен через Ctrl+C.")
+
+            finally:
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_id)"),
+                    {"lock_id": lock_id},
+                )
+                connection.commit()
+
+                print("Эксклюзивная блокировка освобождена.")
+
+    finally:
+        signal.signal(
+            signal.SIGTERM,
+            previous_handler,
+        )
 
 if __name__ == "__main__":
     main()

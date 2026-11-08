@@ -8,6 +8,52 @@ from sqlalchemy import text
 from worker.database import engine
 
 
+def cleanup_container_without_metadata(
+    environment_id: int,
+    apply: bool,
+) -> None:
+    expected_name = f"devtest-hub-env-{environment_id}"
+    client = docker.from_env()
+
+    try:
+        try:
+            container = client.containers.get(expected_name)
+        except NotFound:
+            print("Контейнер с ожидаемым именем отсутствует.")
+            return
+
+        container.reload()
+        labels = container.labels or {}
+
+        valid = (
+            container.name == expected_name
+            and labels.get("devtest-hub.managed") == "true"
+            and labels.get(
+                "devtest-hub.environment-id"
+            ) == str(environment_id)
+        )
+
+        if not valid:
+            raise RuntimeError(
+                "Контейнер не прошёл проверку принадлежности"
+            )
+
+        print(
+            "Найден контейнер без Docker ID в PostgreSQL:",
+            container.name,
+        )
+
+        if apply:
+            if container.status == "running":
+                container.stop(timeout=10)
+
+            container.remove()
+            print("Docker-контейнер удалён.")
+
+    finally:
+        client.close()
+
+
 def delete_environment(environment_id: int, apply: bool) -> None:
     with engine.begin() as connection:
         database = connection.execute(
@@ -44,6 +90,12 @@ def delete_environment(environment_id: int, apply: bool) -> None:
 
         if container_id is None and environment["host_port"] is not None:
             raise RuntimeError("Некорректные данные контейнера")
+
+        if container_id is None:
+            cleanup_container_without_metadata(
+                environment_id,
+                apply,
+            )
 
         if container_id is not None:
             if not re.fullmatch(r"[0-9a-f]{64}", container_id):
