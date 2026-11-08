@@ -10,6 +10,7 @@ from worker.database import engine
 from worker.delete_once import delete_environment
 from worker.run_once import main as run_deployment
 from worker.recover_once import recover_jobs
+from worker.monitor import main as monitor_environments
 
 
 def get_jobs():
@@ -112,12 +113,26 @@ def main():
                     return
 
                 print(f"Интервал проверки: {args.interval} сек.")
+                print("Интервал мониторинга: 60 сек.")
+
+                next_monitor_at = 0.0
 
                 while not stop_requested.is_set():
                     try:
                         process_jobs()
                     except Exception as error:
                         print(f"Ошибка цикла Worker: {error}")
+
+                    if (
+                        not stop_requested.is_set()
+                        and time.monotonic() >= next_monitor_at
+                    ):
+                        next_monitor_at = time.monotonic() + 60
+
+                        try:
+                            monitor_environments(apply=True)
+                        except Exception as error:
+                            print(f"Ошибка мониторинга: {error}")
 
                     stop_requested.wait(args.interval)
 
