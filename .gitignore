@@ -7,3 +7,16 @@ __pycache__/
 node_modules/
 .idea/
 .vscode/
+# Frontend build and coverage
+frontend/dist/
+frontend/coverage/
+.coverage
+htmlcov/
+
+# Local environment files
+.env.*
+!.env.example
+
+# Database backups
+*.dump
+*.backup

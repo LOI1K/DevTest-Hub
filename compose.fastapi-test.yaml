@@ -1,0 +1,4 @@
+services:
+  worker:
+    environment:
+      DEVTEST_HUB_ENABLE_FASTAPI_POSTGRES: "1"

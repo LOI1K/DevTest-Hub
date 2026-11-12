@@ -39,6 +39,7 @@ class EnvironmentResponse(EnvironmentCreate):
     id: int
     status: EnvironmentStatus
     host_port: int | None = None
+    delete_volume_on_delete: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

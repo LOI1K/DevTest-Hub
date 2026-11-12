@@ -79,11 +79,11 @@ describe("Автоматическое обновление тестовых с�
 
     await advanceTime(0);
 
-    expect(screen.getByText("Статус: pending")).toBeInTheDocument();
+    expect(screen.getByText("Статус: Ожидает создания")).toBeInTheDocument();
 
     await advanceTime(5000);
 
-    expect(screen.getByText("Статус: running")).toBeInTheDocument();
+    expect(screen.getByText("Статус: Работает")).toBeInTheDocument();
 
     const link = screen.getByRole("link", {
       name: "Открыть среду",

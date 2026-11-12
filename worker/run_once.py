@@ -10,7 +10,8 @@ def claim_job():
             SELECT id
             FROM environments
             WHERE status = 'pending'
-              AND owner_id IS NOT NULL
+                AND template = 'nginx'
+                AND owner_id IS NOT NULL
             ORDER BY id
             FOR UPDATE SKIP LOCKED
             LIMIT 1
