@@ -22,6 +22,8 @@ def get_running_environments():
                 SELECT id, name, container_id, host_port
                 FROM environments
                 WHERE status = 'running'
+                    AND template = 'nginx'
+                    AND owner_id IS NOT NULL
                 ORDER BY id
             """)
         ).mappings().all()
@@ -90,6 +92,80 @@ def check_environment(client, environment):
     return f"OK: контейнер работает, порт {host_port}"
 
 
+def get_verified_port(client, environment):
+    container_id = environment["container_id"]
+
+    if (
+        not isinstance(container_id, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", container_id)
+    ):
+        return None
+
+    try:
+        container = client.containers.get(container_id)
+        container.reload()
+    except NotFound:
+        return None
+
+    bindings = (
+        container.attrs.get("NetworkSettings", {})
+        .get("Ports") or {}
+    ).get("80/tcp") or []
+
+    if len(bindings) != 1:
+        return None
+
+    binding = bindings[0]
+    port = str(binding.get("HostPort", ""))
+
+    if (
+        binding.get("HostIp") != "127.0.0.1"
+        or not port.isascii()
+        or not port.isdigit()
+        or not 1 <= int(port) <= 65535
+    ):
+        return None
+
+    actual_port = int(port)
+
+    verified_environment = {
+        **environment,
+        "host_port": actual_port,
+    }
+
+    expected_result = (
+        f"OK: контейнер работает, порт {actual_port}"
+    )
+
+    if check_environment(client, verified_environment) != expected_result:
+        return None
+
+    return actual_port
+
+
+def update_host_port(environment, new_port):
+    with engine.begin() as connection:
+        result = connection.execute(
+            text("""
+                UPDATE environments
+                SET host_port = :new_port
+                WHERE id = :id
+                  AND template = 'nginx'
+                  AND status = 'running'
+                  AND container_id = :container_id
+                  AND host_port = :old_port
+            """),
+            {
+                "id": environment["id"],
+                "container_id": environment["container_id"],
+                "old_port": environment["host_port"],
+                "new_port": new_port,
+            },
+        )
+
+    return result.rowcount == 1
+
+
 def mark_failed(environment):
     with engine.begin() as connection:
         result = connection.execute(
@@ -97,9 +173,10 @@ def mark_failed(environment):
                 UPDATE environments
                 SET status = 'failed'
                 WHERE id = :id
-                  AND status = 'running'
-                  AND container_id = :container_id
-                  AND host_port = :host_port
+                    AND template = 'nginx'
+                    AND status = 'running'
+                    AND container_id = :container_id
+                    AND host_port = :host_port
             """),
             {
                 "id": environment["id"],
@@ -142,6 +219,56 @@ def main(apply=False):
 
             result = check_environment(client, environment)
             print("Проверка:", result)
+
+            if result == (
+                "НЕСООТВЕТСТВИЕ: порт Docker "
+                "не совпадает с PostgreSQL"
+            ):
+                new_port = get_verified_port(
+                    client,
+                    environment,
+                )
+
+                if (
+                    new_port is None
+                    or new_port == environment["host_port"]
+                ):
+                    print(
+                        "Автоматическое обновление порта "
+                        "пропущено: проверка не пройдена."
+                    )
+                    continue
+
+                if not apply:
+                    print(
+                        f"План: обновить порт "
+                        f"{environment['host_port']} -> {new_port}"
+                    )
+                    continue
+
+                confirmation = get_verified_port(
+                    client,
+                    environment,
+                )
+
+                if confirmation != new_port:
+                    print(
+                        "Порт Docker изменился во время "
+                        "проверки. Обновление пропущено."
+                    )
+                    continue
+
+                if update_host_port(environment, new_port):
+                    print(
+                        f"Порт PostgreSQL обновлён: {new_port}"
+                    )
+                else:
+                    print(
+                        "Состояние записи изменилось. "
+                        "Обновление пропущено."
+                    )
+
+                continue
 
             failure_detected = (
                 result == "ОШИБКА: Docker-контейнер отсутствует"

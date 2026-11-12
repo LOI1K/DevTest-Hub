@@ -68,6 +68,7 @@ def delete_environment(environment_id: int, apply: bool) -> None:
                 SELECT id, name, status, container_id, host_port
                 FROM environments
                 WHERE id = :environment_id
+                    AND template = 'nginx'
                 FOR UPDATE SKIP LOCKED
             """),
             {"environment_id": environment_id},
@@ -159,7 +160,8 @@ def delete_environment(environment_id: int, apply: bool) -> None:
             text("""
                 DELETE FROM environments
                 WHERE id = :environment_id
-                  AND status = 'deleting'
+                    AND template = 'nginx'
+                    AND status = 'deleting'
             """),
             {"environment_id": environment_id},
         )

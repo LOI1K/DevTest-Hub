@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -51,10 +60,75 @@ class Environment(Base):
         nullable=True,
     )
 
+
+    delete_volume_on_delete: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
+    )
+
+
+class EnvironmentResource(Base):
+    __tablename__ = "environment_resources"
+
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('container', 'network', 'volume')",
+            name="ck_environment_resources_type",
+        ),
+        UniqueConstraint(
+            "environment_id",
+            "resource_type",
+            "role",
+            name="uq_environment_resources_type_role",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+    )
+
+    environment_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "environments.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    resource_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    role: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    resource_name: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+
+    docker_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
 

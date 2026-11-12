@@ -298,3 +298,133 @@ def test_cannot_access_another_users_environment(client):
     )
     assert response.status_code == 200
     assert response.json()["name"] == "private-environment"
+
+
+def test_fastapi_delete_requires_volume_confirmation(
+    client, monkeypatch
+):
+    monkeypatch.setenv(
+        "DEVTEST_HUB_ENABLE_FASTAPI_POSTGRES", "1"
+    )
+
+    created = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "volume-confirm-test",
+            "template": "fastapi-postgres",
+        },
+    )
+
+    assert created.status_code == 201
+    environment_id = created.json()["id"]
+
+    # Без подтверждения удаление запрещено.
+    response = client.delete(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert response.status_code == 409
+
+    check = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert check.status_code == 200
+    assert check.json()["status"] == "pending"
+    assert check.json()["delete_volume_on_delete"] is False
+
+    # Владелец подтверждает удаление данных.
+    confirmed = client.delete(
+        f"/api/v1/environments/{environment_id}",
+        params={"delete_volume": "true"},
+    )
+
+    assert confirmed.status_code == 202
+    assert confirmed.json()["status"] == "deleting"
+    assert confirmed.json()["delete_volume_on_delete"] is True
+
+    # Проверяем сохранение подтверждения.
+    repeated = client.delete(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert repeated.status_code == 202
+    assert repeated.json()["delete_volume_on_delete"] is True
+
+
+def test_nginx_rejects_volume_deletion_parameter(client):
+    created = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "nginx-volume-test",
+            "template": "nginx",
+        },
+    )
+
+    assert created.status_code == 201
+    environment_id = created.json()["id"]
+
+    response = client.delete(
+        f"/api/v1/environments/{environment_id}",
+        params={"delete_volume": "true"},
+    )
+
+    assert response.status_code == 400
+
+    check = client.get(
+        f"/api/v1/environments/{environment_id}"
+    )
+
+    assert check.status_code == 200
+    assert check.json()["status"] == "pending"
+
+
+def test_fastapi_template_disabled_by_default(
+    client, monkeypatch
+):
+    monkeypatch.delenv(
+        "DEVTEST_HUB_ENABLE_FASTAPI_POSTGRES",
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "disabled-fastapi-test",
+            "template": "fastapi-postgres",
+        },
+    )
+
+    assert response.status_code == 503
+    assert "temporarily unavailable" in (
+        response.json()["detail"]
+    )
+
+    environments = client.get("/api/v1/environments")
+
+    assert environments.status_code == 200
+    assert not any(
+        item["name"] == "disabled-fastapi-test"
+        for item in environments.json()
+    )
+
+
+def test_fastapi_template_enabled(
+    client, monkeypatch
+):
+    monkeypatch.setenv(
+        "DEVTEST_HUB_ENABLE_FASTAPI_POSTGRES",
+        "1",
+    )
+
+    response = client.post(
+        "/api/v1/environments",
+        json={
+            "name": "enabled-fastapi-test",
+            "template": "fastapi-postgres",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["template"] == "fastapi-postgres"
+    assert response.json()["status"] == "pending"

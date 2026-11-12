@@ -21,7 +21,8 @@ def get_unfinished_jobs():
                 SELECT id, name, container_id, host_port
                 FROM environments
                 WHERE status = 'deploying'
-                  AND owner_id IS NOT NULL
+                AND template = 'nginx'
+                AND owner_id IS NOT NULL
                 ORDER BY id
             """)
         ).mappings().all()
